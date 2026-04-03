@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Armado Quant — Dashboard</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prop-types/15.8.1/prop-types.min.js"></script>
+  <script src="https://unpkg.com/recharts@2.8.0/umd/Recharts.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0d0f14; color: #e2e8f0; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
+    ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: #1a1d27; }
+    ::-webkit-scrollbar-thumb { background: #2d3748; border-radius: 2px; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+const { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area } = Recharts;
+
+// ── Config ──────────────────────────────────────────────────────────────────
+const API_BASE = window.location.origin; // same origin as Laravel
+const REFRESH_MS = 5000;
+
+// ── Mock data (used when API not reachable) ──────────────────────────────────
+const MOCK = {
+  agents: [
+    { agent_id:"quant-researcher",    name:"Quant Researcher",    role:"researcher", status:"online",  is_online:true,  task:"Funding Rate Z-score MR",       done:5,  pending:2, daily:3  },
+    { agent_id:"algorithm-designer",  name:"Algorithm Designer",  role:"ml_engineer",status:"online",  is_online:true,  task:"Training LightGBM BTC 1h",       done:3,  pending:1, daily:1  },
+    { agent_id:"backtester",          name:"Backtester",          role:"backtester", status:"working", is_online:true,  task:"Walk-forward BTCUSDT MR",        done:4,  pending:3, daily:2  },
+    { agent_id:"risk-officer",        name:"Risk Officer (CRO)",  role:"risk",       status:"online",  is_online:true,  task:"Monitoring portfolio exposure",   done:1,  pending:0, daily:8  },
+    { agent_id:"signal-engineer",     name:"Signal Engineer",     role:"signal",     status:"online",  is_online:true,  task:"Building entry filter ETHUSDT",  done:5,  pending:2, daily:3  },
+    { agent_id:"execution-engineer",  name:"Execution Engineer",  role:"execution",  status:"online",  is_online:true,  task:"Monitoring 2 open positions",    done:12, pending:0, daily:4  },
+    { agent_id:"market-analyst",      name:"Market Analyst",      role:"analyst",    status:"online",  is_online:true,  task:"EU session monitoring",          done:2,  pending:1, daily:14 },
+    { agent_id:"portfolio-manager",   name:"Portfolio Manager",   role:"portfolio",       status:"online",  is_online:true,  task:"Awaiting coordinator",          done:3,  pending:0, daily:1  },
+    { agent_id:"data-quality-monitor",name:"Data Quality Monitor",role:"infrastructure",  status:"online",  is_online:true,  task:"All 6 checks PASS",             done:0,  pending:0, daily:96 },
+    { agent_id:"onchain-sentiment-analyst",name:"On-Chain & Sentiment",role:"onchain",    status:"online",  is_online:true,  task:"BTC outflow +2σ — reporting",   done:2,  pending:1, daily:6  },
+    { agent_id:"coordinator",         name:"Coordinator",         role:"coordinator",     status:"working", is_online:true,  task:"Dispatch cycle — 2 tasks sent", done:0,  pending:0, daily:288},
+  ],
+  overview: {
+    firm_status: {
+      agents:      { total:11, online:10 },
+      tasks:       { pending:9, in_progress:3, completed_today:22 },
+      signals:     { pending:2, approved:1, executed:12, rejected:3 },
+      research:    { submitted:4, approved_for_backtest:2, promoted:1 },
+      backtests:   { pass:5, fail:2 },
+      executions_today: 4,
+      alerts:      { unacknowledged:3, critical:1 },
+      latest_market: { market_regime:"TRENDING_UP", risk_level:"MEDIUM", btc_price:"83420.50", btc_24h_change_pct:"2.14", funding_rate_btc:"0.0042" },
+      data_quality: { status:"HEALTHY", failing_checks:0 },
+      sentiment: { score:0.35, velocity:0.02, fear_greed_index:62, overall_bias:"BULLISH", dominant_narrative:"BTC ETF inflows continue" }
+    }
+  },
+  signals: [
+    { uuid:"s1", symbol:"BTCUSDT", direction:"LONG",  status:"EXECUTED", risk_percentage:"0.80", entry_price:"82100", created_at:"2026-04-02 14:22" },
+    { uuid:"s2", symbol:"ETHUSDT", direction:"SHORT", status:"APPROVED", risk_percentage:"0.60", entry_price:"1842",  created_at:"2026-04-02 15:01" },
+    { uuid:"s3", symbol:"SOLUSDT", direction:"LONG",  status:"PENDING",  risk_percentage:"0.50", entry_price:"142.3", created_at:"2026-04-02 15:44" },
+    { uuid:"s4", symbol:"BTCUSDT", direction:"SHORT", status:"REJECTED_BY_RISK", risk_percentage:"1.20", entry_price:"83500", created_at:"2026-04-02 13:10" },
+  ],
+  activity: [
+    { id:1, time:"15:44", actor:"signal-engineer",   action:"signal.submitted",     text:"Submitted SOLUSDT LONG signal",           level:"info"  },
+    { id:2, time:"15:38", actor:"algorithm-designer",action:"model.registered",     text:"LightGBM BTC 1h OOS Sharpe 1.42",         level:"succ"  },
+    { id:3, time:"15:22", actor:"risk-officer",       action:"signal.approved",      text:"ETHUSDT SHORT approved",                  level:"succ"  },
+    { id:4, time:"15:01", actor:"market-analyst",     action:"alert.created",        text:"CRITICAL: BTC OI +12% in 1h",             level:"crit"  },
+    { id:5, time:"14:55", actor:"backtester",         action:"backtest.submitted",   text:"BTCUSDT MR: PASS (Sharpe 1.38)",          level:"succ"  },
+    { id:6, time:"14:40", actor:"risk-officer",       action:"signal.rejected",      text:"BTCUSDT SHORT rejected: risk 1.2% > 1%",  level:"warn"  },
+    { id:7, time:"14:22", actor:"execution-engineer", action:"execution.reported",   text:"BTCUSDT LONG FILLED @ 82100 (0.8bps slip)",level:"succ" },
+    { id:8, time:"14:10", actor:"quant-researcher",   action:"research.submitted",   text:"Funding Rate Z-score MR: p=0.018",        level:"info"  },
+    { id:9, time:"13:55", actor:"portfolio-manager",  action:"portfolio.assessed",   text:"Deployed 18.4% | Sharpe 7d: 1.21",        level:"info"  },
+    { id:10,time:"13:40", actor:"market-analyst",     action:"market.update",        text:"Regime: TRENDING_UP | Risk: MEDIUM",      level:"info"  },
+    { id:11,time:"13:35", actor:"data-quality-monitor",action:"dq.health_report",    text:"All 6 checks PASS — pipeline healthy",    level:"succ"  },
+    { id:12,time:"13:30", actor:"onchain-sentiment",   action:"onchain.report",      text:"BTC exchange outflow +2.3σ — accumulation",level:"info" },
+  ],
+  pnl: [
+    {d:"03/27",v:0},{d:"03/28",v:0.8},{d:"03/29",v:1.4},{d:"03/30",v:0.9},
+    {d:"03/31",v:2.1},{d:"04/01",v:3.4},{d:"04/02",v:4.2},
+  ],
+  portfolio: {
+    total_equity: 10000, deployed_pct: 18.4,
+    daily_pnl_pct: 1.24, weekly_pnl_pct: 4.2,
+    open_positions_count: 2, circuit_breaker_active: false,
+    strategies: [
+      { name:"BTC Funding Rate MR", tier:3, allocation_pct:"8.0",  live_sharpe_7d:"1.42", status:"live",  total_pnl_pct:"3.2"  },
+      { name:"ETH Mean Reversion",  tier:2, allocation_pct:"5.0",  live_sharpe_7d:"1.18", status:"live",  total_pnl_pct:"1.8"  },
+      { name:"SOL Momentum",        tier:1, allocation_pct:"0.0",  live_sharpe_7d:"0.94", status:"paper", total_pnl_pct:"0.0"  },
+    ]
+  }
+};
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+const statusColor = s => ({
+  online:"#48bb78", working:"#ed8936", offline:"#718096", error:"#fc8181", maintenance:"#b794f4"
+}[s] || "#718096");
+
+const dirColor = d => d === "LONG" ? "#48bb78" : "#fc8181";
+const sigColor  = s => ({ APPROVED:"#48bb78", EXECUTED:"#4299e1", PENDING:"#ed8936", REJECTED_BY_RISK:"#fc8181" }[s] || "#718096");
+const lvlColor  = l => ({ succ:"#48bb78", warn:"#ed8936", crit:"#fc8181", info:"#63b3ed" }[l] || "#a0aec0");
+const tierLabel = t => (["Candidate","Paper","Small Live","Scaling","Core"])[t] || "—";
+const tierColor = t => (["#718096","#b794f4","#63b3ed","#48bb78","#ffd700"])[t] || "#718096";
+
+const regimeColor = r => ({
+  TRENDING_UP:"#48bb78", TRENDING_DOWN:"#fc8181",
+  RANGING:"#63b3ed", VOLATILE:"#ed8936", RISK_OFF:"#b794f4"
+}[r] || "#718096");
+
+const riskLevelColor = r => ({ LOW:"#48bb78", MEDIUM:"#ed8936", HIGH:"#fc8181", EXTREME:"#b794f4" }[r] || "#718096");
+
+const fmt = (v, d=2) => Number(v).toFixed(d);
+const fmtUSD = v => `$${Number(v).toLocaleString("en-US", {minimumFractionDigits:0})}`;
+
+// ── Sub-components ──────────────────────────────────────────────────────────
+
+function Badge({ children, color="#718096", bg }) {
+  return <span style={{ background: bg || color+"22", color, border:`1px solid ${color}44`, padding:"1px 6px", borderRadius:3, fontSize:10, fontWeight:700, letterSpacing:"0.05em" }}>{children}</span>;
+}
+
+function AgentCard({ agent }) {
+  const dot = agent.is_online
+    ? { background: agent.status === "working" ? "#ed8936" : "#48bb78", boxShadow:`0 0 6px ${agent.status==="working"?"#ed8936":"#48bb78"}` }
+    : { background:"#718096" };
+
+  const roleIcons = { researcher:"🔬", ml_engineer:"🤖", backtester:"📊", risk:"🛡️", signal:"⚡", execution:"⚙️", analyst:"📡", portfolio:"💼", infrastructure:"🏗️", onchain:"⛓️", coordinator:"🎯" };
+
+  return (
+    <div style={{ background:"#161929", border:"1px solid #2d3748", borderRadius:6, padding:"10px 12px", position:"relative", minHeight:90 }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+          <span style={{ ...dot, width:7, height:7, borderRadius:"50%", display:"inline-block", flexShrink:0 }} />
+          <span style={{ color:"#e2e8f0", fontWeight:700, fontSize:11 }}>{roleIcons[agent.role]} {agent.name}</span>
+        </div>
+        <Badge color={statusColor(agent.status)}>{agent.status.toUpperCase()}</Badge>
+      </div>
+
+      <div style={{ color:"#a0aec0", fontSize:10, marginBottom:8, minHeight:14, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+        {agent.task || "—"}
+      </div>
+
+      <div style={{ display:"flex", gap:8 }}>
+        <span style={{ color:"#48bb78", fontSize:10 }}>✓ {agent.done}</span>
+        <span style={{ color:"#718096", fontSize:10 }}>◷ {agent.pending}</span>
+        <span style={{ color:"#63b3ed", fontSize:10 }}>↻ {agent.daily}/day</span>
+      </div>
+    </div>
+  );
+}
+
+function SignalPipeline({ signals }) {
+  const stages = [
+    { key:"PENDING",          label:"Pending Risk Check", color:"#ed8936" },
+    { key:"APPROVED",         label:"Approved",           color:"#48bb78" },
+    { key:"EXECUTED",         label:"Executed",           color:"#4299e1" },
+    { key:"REJECTED_BY_RISK", label:"Rejected",           color:"#fc8181" },
+  ];
+  return (
+    <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8 }}>
+      {stages.map(stage => {
+        const items = signals.filter(s => s.status === stage.key);
+        return (
+          <div key={stage.key} style={{ background:"#161929", border:`1px solid ${stage.color}33`, borderRadius:6, padding:"8px 10px" }}>
+            <div style={{ color:stage.color, fontWeight:700, fontSize:10, marginBottom:6, display:"flex", justifyContent:"space-between" }}>
+              <span>{stage.label}</span>
+              <span style={{ background:stage.color+"22", padding:"0 5px", borderRadius:10 }}>{items.length}</span>
+            </div>
+            {items.length === 0
+              ? <div style={{ color:"#4a5568", fontSize:10, padding:"4px 0" }}>empty</div>
+              : items.map(s => (
+                <div key={s.uuid} style={{ background:"#0d0f14", borderRadius:4, padding:"5px 7px", marginBottom:4 }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", marginBottom:2 }}>
+                    <span style={{ color:"#e2e8f0", fontWeight:700 }}>{s.symbol}</span>
+                    <span style={{ color:dirColor(s.direction), fontSize:10 }}>{s.direction}</span>
+                  </div>
+                  <div style={{ color:"#718096", fontSize:10 }}>Risk: {s.risk_percentage}% @ {s.entry_price}</div>
+                </div>
+              ))
+            }
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ActivityFeed({ items }) {
+  return (
+    <div style={{ background:"#161929", border:"1px solid #2d3748", borderRadius:6, padding:"10px 12px", height:"100%", overflowY:"auto" }}>
+      <div style={{ color:"#a0aec0", fontWeight:700, fontSize:10, marginBottom:8, letterSpacing:"0.08em" }}>◉ LIVE ACTIVITY FEED</div>
+      {items.map(item => (
+        <div key={item.id} style={{ display:"flex", gap:8, marginBottom:7, alignItems:"flex-start" }}>
+          <span style={{ color:"#4a5568", fontSize:10, flexShrink:0, marginTop:1 }}>{item.time}</span>
+          <span style={{ width:6, height:6, borderRadius:"50%", background:lvlColor(item.level), flexShrink:0, marginTop:3 }} />
+          <div>
+            <span style={{ color:"#718096", fontSize:9 }}>{item.actor} · </span>
+            <span style={{ color:"#cbd5e0", fontSize:10 }}>{item.text}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PortfolioCard({ data, pnl }) {
+  const pos = data.daily_pnl_pct >= 0;
+  return (
+    <div style={{ background:"#161929", border:"1px solid #2d3748", borderRadius:6, padding:"10px 12px" }}>
+      <div style={{ color:"#a0aec0", fontWeight:700, fontSize:10, marginBottom:10, letterSpacing:"0.08em" }}>💼 PORTFOLIO</div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:8, marginBottom:10 }}>
+        {[
+          { label:"Equity",     value: fmtUSD(data.total_equity), color:"#e2e8f0" },
+          { label:"Deployed",   value: `${fmt(data.deployed_pct)}%`, color:"#63b3ed" },
+          { label:"Daily P&L",  value: `${pos?"+":""}${fmt(data.daily_pnl_pct)}%`, color: pos?"#48bb78":"#fc8181" },
+          { label:"Weekly P&L", value: `${data.weekly_pnl_pct>=0?"+":""}${fmt(data.weekly_pnl_pct)}%`, color: data.weekly_pnl_pct>=0?"#48bb78":"#fc8181" },
+        ].map(m => (
+          <div key={m.label} style={{ background:"#0d0f14", borderRadius:4, padding:"6px 8px" }}>
+            <div style={{ color:"#718096", fontSize:9 }}>{m.label}</div>
+            <div style={{ color:m.color, fontWeight:700, fontSize:14 }}>{m.value}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ height:70 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={pnl} margin={{ top:2,right:2,bottom:0,left:2 }}>
+            <defs>
+              <linearGradient id="pnlGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%"  stopColor="#48bb78" stopOpacity={0.3}/>
+                <stop offset="95%" stopColor="#48bb78" stopOpacity={0}/>
+              </linearGradient>
+            </defs>
+            <XAxis dataKey="d" tick={{ fill:"#4a5568", fontSize:8 }} axisLine={false} tickLine={false}/>
+            <YAxis hide />
+            <Tooltip contentStyle={{ background:"#1a1d27", border:"1px solid #2d3748", borderRadius:4, fontSize:10 }} formatter={v=>[`+${fmt(v)}%`,"P&L"]} />
+            <Area type="monotone" dataKey="v" stroke="#48bb78" strokeWidth={1.5} fill="url(#pnlGrad)" dot={false}/>
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
+function StrategyTable({ strategies }) {
+  return (
+    <div style={{ background:"#161929", border:"1px solid #2d3748", borderRadius:6, padding:"10px 12px" }}>
+      <div style={{ color:"#a0aec0", fontWeight:700, fontSize:10, marginBottom:8, letterSpacing:"0.08em" }}>📈 STRATEGY PERFORMANCE</div>
+      <table style={{ width:"100%", borderCollapse:"collapse" }}>
+        <thead>
+          <tr style={{ color:"#4a5568", fontSize:9 }}>
+            {["Strategy","Tier","Alloc","Sharpe 7d","P&L","Status"].map(h => (
+              <th key={h} style={{ padding:"3px 6px", textAlign:"left", borderBottom:"1px solid #2d3748", fontWeight:600 }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {strategies.map((s,i) => (
+            <tr key={i} style={{ borderBottom:"1px solid #1a1d27" }}>
+              <td style={{ padding:"5px 6px", color:"#e2e8f0", fontSize:10 }}>{s.name}</td>
+              <td style={{ padding:"5px 6px" }}><Badge color={tierColor(s.tier)}>{tierLabel(s.tier)}</Badge></td>
+              <td style={{ padding:"5px 6px", color:"#63b3ed" }}>{fmt(s.allocation_pct)}%</td>
+              <td style={{ padding:"5px 6px", color: s.live_sharpe_7d >= 1 ? "#48bb78":"#ed8936" }}>{fmt(s.live_sharpe_7d)}</td>
+              <td style={{ padding:"5px 6px", color: s.total_pnl_pct >= 0 ? "#48bb78":"#fc8181" }}>{s.total_pnl_pct>=0?"+":""}{fmt(s.total_pnl_pct)}%</td>
+              <td style={{ padding:"5px 6px" }}><Badge color={s.status==="live"?"#48bb78":s.status==="paper"?"#b794f4":"#718096"}>{s.status.toUpperCase()}</Badge></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function MetricBar({ label, value, max, color="#48bb78" }) {
+  const pct = Math.min(100, (value/max)*100);
+  return (
+    <div style={{ marginBottom:6 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", marginBottom:2 }}>
+        <span style={{ color:"#a0aec0", fontSize:9 }}>{label}</span>
+        <span style={{ color:color, fontSize:9, fontWeight:700 }}>{value}</span>
+      </div>
+      <div style={{ background:"#2d3748", borderRadius:2, height:3 }}>
+        <div style={{ background:color, borderRadius:2, height:3, width:`${pct}%`, transition:"width 0.5s" }} />
+      </div>
+    </div>
+  );
+}
+
+// ── Main App ────────────────────────────────────────────────────────────────
+function App() {
+  const [data, setData]         = useState(MOCK);
+  const [lastUpdate, setLast]   = useState(new Date());
+  const [connected, setConn]    = useState(false);
+  const [tick, setTick]         = useState(0);
+
+  // Try to fetch from real API; fall back to mock gracefully
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const [overview, agentsRes, signalsRes] = await Promise.all([
+          fetch(`${API_BASE}/api/manager/dashboard`, { headers:{ Accept:"application/json" } }),
+          fetch(`${API_BASE}/api/manager/agents`,    { headers:{ Accept:"application/json" } }),
+          fetch(`${API_BASE}/api/signals?per_page=10`, { headers:{ Authorization:`Bearer ${localStorage.getItem("mgr_token")||""}`, Accept:"application/json" } }),
+        ]);
+        if (overview.ok && agentsRes.ok) {
+          const ovr = await overview.json();
+          const agt = await agentsRes.json();
+          const sig = signalsRes.ok ? await signalsRes.json() : { signals:{ data: MOCK.signals } };
+          setData(d => ({ ...d, overview: ovr, agents: agt.agents||MOCK.agents, signals: sig.signals?.data || MOCK.signals }));
+          setConn(true);
+        }
+      } catch { setConn(false); }
+      setLast(new Date());
+      setTick(t => t+1);
+    };
+    load();
+    const id = setInterval(load, REFRESH_MS);
+    return () => clearInterval(id);
+  }, []);
+
+  const fs = data.overview.firm_status;
+  const mkt = fs.latest_market || {};
+
+  return (
+    <div style={{ minHeight:"100vh", padding:"12px 14px", display:"flex", flexDirection:"column", gap:10 }}>
+
+      {/* ── Header ── */}
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", background:"#161929", borderRadius:6, padding:"8px 14px", border:"1px solid #2d3748" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+          <span style={{ fontSize:16, fontWeight:900, color:"#e2e8f0", letterSpacing:"-0.02em" }}>⚡ Armado Quant</span>
+          <Badge color={connected?"#48bb78":"#718096"}>{connected?"● LIVE":"○ DEMO"}</Badge>
+          {fs.circuit_breaker_active &&
+            <Badge color="#fc8181">⚠ CIRCUIT BREAKER ACTIVE</Badge>}
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          {mkt.market_regime &&
+            <Badge color={regimeColor(mkt.market_regime)}>{mkt.market_regime?.replace("_"," ")}</Badge>}
+          {mkt.risk_level &&
+            <Badge color={riskLevelColor(mkt.risk_level)}>RISK: {mkt.risk_level}</Badge>}
+          {fs.data_quality &&
+            <Badge color={fs.data_quality.status==="HEALTHY"?"#48bb78":fs.data_quality.status==="DEGRADED"?"#ed8936":"#fc8181"}>DATA: {fs.data_quality.status}</Badge>}
+          {fs.sentiment &&
+            <Badge color={fs.sentiment.overall_bias==="BULLISH"?"#48bb78":fs.sentiment.overall_bias==="BEARISH"?"#fc8181":"#63b3ed"}>{fs.sentiment.overall_bias} ({fs.sentiment.fear_greed_index})</Badge>}
+          {mkt.btc_price &&
+            <span style={{ color:"#a0aec0", fontSize:10 }}>BTC <span style={{ color: mkt.btc_24h_change_pct>=0?"#48bb78":"#fc8181", fontWeight:700 }}>${fmt(mkt.btc_price,0)}</span> <span style={{ color: mkt.btc_24h_change_pct>=0?"#48bb78":"#fc8181" }}>({mkt.btc_24h_change_pct>=0?"+":""}{fmt(mkt.btc_24h_change_pct)}%)</span></span>}
+          <span style={{ color:"#4a5568", fontSize:9 }}>↻ {lastUpdate.toLocaleTimeString()}</span>
+        </div>
+      </div>
+
+      {/* ── Stat Pills ── */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(10,1fr)", gap:6 }}>
+        {[
+          { label:"Agents Online", value:`${fs.agents?.online||0}/${fs.agents?.total||0}`, color:"#48bb78" },
+          { label:"Tasks Today",   value:fs.tasks?.completed_today||0, color:"#63b3ed" },
+          { label:"In Progress",   value:fs.tasks?.in_progress||0, color:"#ed8936" },
+          { label:"Signals Live",  value:fs.signals?.approved||0, color:"#48bb78" },
+          { label:"Executed",      value:fs.executions_today||0, color:"#4299e1" },
+          { label:"Rejected",      value:fs.signals?.rejected||0, color:"#fc8181" },
+          { label:"Backtests ✓",   value:fs.backtests?.pass||0, color:"#48bb78" },
+          { label:"🔔 Alerts",      value:fs.alerts?.unacknowledged||0, color:fs.alerts?.critical>0?"#fc8181":"#ed8936" },
+          { label:"Data Quality",  value:fs.data_quality?.status||"—", color:fs.data_quality?.status==="HEALTHY"?"#48bb78":fs.data_quality?.status==="DEGRADED"?"#ed8936":"#fc8181" },
+          { label:"Sentiment",     value:fs.sentiment?.fear_greed_index||"—", color:fs.sentiment?.overall_bias==="BULLISH"?"#48bb78":fs.sentiment?.overall_bias==="BEARISH"?"#fc8181":"#63b3ed" },
+        ].map(m => (
+          <div key={m.label} style={{ background:"#161929", border:`1px solid ${m.color}33`, borderRadius:6, padding:"8px 10px", textAlign:"center" }}>
+            <div style={{ color:m.color, fontWeight:900, fontSize:18 }}>{m.value}</div>
+            <div style={{ color:"#4a5568", fontSize:9, marginTop:2 }}>{m.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Main grid ── */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 280px", gap:10, flex:1 }}>
+        <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+
+          {/* Agent Grid */}
+          <div>
+            <div style={{ color:"#718096", fontSize:9, fontWeight:700, letterSpacing:"0.08em", marginBottom:6 }}>▸ AGENT STATUS — {data.agents.length} EMPLOYEES</div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:8 }}>
+              {data.agents.map(a => <AgentCard key={a.agent_id} agent={a} />)}
+            </div>
+          </div>
+
+          {/* Signal Pipeline */}
+          <div>
+            <div style={{ color:"#718096", fontSize:9, fontWeight:700, letterSpacing:"0.08em", marginBottom:6 }}>▸ SIGNAL PIPELINE</div>
+            <SignalPipeline signals={data.signals} />
+          </div>
+
+          {/* Portfolio + Strategy */}
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1.6fr", gap:10 }}>
+            <PortfolioCard data={data.portfolio} pnl={data.pnl} />
+            <StrategyTable strategies={data.portfolio.strategies} />
+          </div>
+
+          {/* Research Pipeline Progress */}
+          <div style={{ background:"#161929", border:"1px solid #2d3748", borderRadius:6, padding:"10px 12px" }}>
+            <div style={{ color:"#a0aec0", fontWeight:700, fontSize:10, marginBottom:10, letterSpacing:"0.08em" }}>🔬 RESEARCH PIPELINE</div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:6 }}>
+              {[
+                { stage:"Submitted",   count:fs.research?.submitted||0,           color:"#63b3ed" },
+                { stage:"In Review",   count:1,                                   color:"#b794f4" },
+                { stage:"→ Backtest",  count:fs.research?.approved_for_backtest||0,color:"#ed8936" },
+                { stage:"Backtest ✓",  count:fs.backtests?.pass||0,               color:"#48bb78" },
+                { stage:"Promoted",    count:fs.research?.promoted||0,            color:"#ffd700" },
+              ].map(s => (
+                <div key={s.stage} style={{ background:"#0d0f14", borderRadius:4, padding:"8px", textAlign:"center", border:`1px solid ${s.color}22` }}>
+                  <div style={{ color:s.color, fontSize:20, fontWeight:900 }}>{s.count}</div>
+                  <div style={{ color:"#718096", fontSize:9 }}>{s.stage}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+        </div>
+
+        {/* ── Right: Activity Feed ── */}
+        <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+          <div style={{ flex:1, minHeight:0 }}>
+            <ActivityFeed items={data.activity} />
+          </div>
+
+          {/* Risk meters */}
+          <div style={{ background:"#161929", border:"1px solid #2d3748", borderRadius:6, padding:"10px 12px" }}>
+            <div style={{ color:"#a0aec0", fontWeight:700, fontSize:10, marginBottom:8, letterSpacing:"0.08em" }}>🛡️ RISK METERS</div>
+            <MetricBar label="Portfolio Exposure" value={`${fmt(data.portfolio.deployed_pct)}%`} max={40} color="#63b3ed" />
+            <MetricBar label="Daily Loss Limit"   value={`${fmt(Math.max(0,data.portfolio.daily_pnl_pct*-1))}%`} max={3} color="#fc8181" />
+            <MetricBar label="Open Positions"     value={data.portfolio.open_positions_count} max={8} color="#ed8936" />
+            <div style={{ marginTop:8, padding:"6px 8px", background:"#0d0f14", borderRadius:4 }}>
+              <div style={{ color:"#718096", fontSize:9, marginBottom:2 }}>Funding Rate BTC</div>
+              <span style={{ color: Math.abs(mkt.funding_rate_btc||0) > 0.01 ? "#ed8936":"#48bb78", fontWeight:700 }}>
+                {fmt(mkt.funding_rate_btc||0, 4)}%
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ color:"#2d3748", fontSize:9, textAlign:"center" }}>Armado Quant · Manager: Claude · CEO: Brian · Refreshes every {REFRESH_MS/1000}s</div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
