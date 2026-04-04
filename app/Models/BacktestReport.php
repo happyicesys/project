@@ -11,6 +11,8 @@ class BacktestReport extends Model
     use HasUuids;
 
     protected $primaryKey = 'uuid';
+    public $incrementing = false;
+    protected $keyType = 'string';
 
     protected $fillable = [
         'research_finding_id',

@@ -11,6 +11,8 @@ class StrategyPerformance extends Model
     use HasUuids;
 
     protected $primaryKey = 'uuid';
+    public $incrementing = false;
+    protected $keyType = 'string';
 
     protected $table = 'strategy_performance';
 
