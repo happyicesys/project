@@ -10,6 +10,8 @@ class ModelRegistry extends Model
 {
     use HasUuids;
 
+    protected $primaryKey = 'uuid';
+
     protected $table = 'model_registry';
 
     protected $fillable = [

@@ -9,6 +9,8 @@ class TradeSignal extends Model
 {
     use HasUuids;
 
+    protected $primaryKey = 'uuid';
+
     protected $fillable = [
         'symbol',
         'direction',

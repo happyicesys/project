@@ -10,6 +10,8 @@ class StrategyPerformance extends Model
 {
     use HasUuids;
 
+    protected $primaryKey = 'uuid';
+
     protected $table = 'strategy_performance';
 
     protected $fillable = [

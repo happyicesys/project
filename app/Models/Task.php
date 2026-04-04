@@ -10,6 +10,8 @@ class Task extends Model
 {
     use HasUuids;
 
+    protected $primaryKey = 'uuid';
+
     protected $fillable = [
         'title',
         'description',

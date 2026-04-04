@@ -10,6 +10,8 @@ class Alert extends Model
 {
     use HasUuids;
 
+    protected $primaryKey = 'uuid';
+
     protected $fillable = [
         'type',
         'symbol',

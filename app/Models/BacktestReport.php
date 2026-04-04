@@ -10,6 +10,8 @@ class BacktestReport extends Model
 {
     use HasUuids;
 
+    protected $primaryKey = 'uuid';
+
     protected $fillable = [
         'research_finding_id',
         'strategy_name',

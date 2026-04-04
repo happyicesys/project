@@ -10,6 +10,8 @@ class MarketUpdate extends Model
 {
     use HasUuids;
 
+    protected $primaryKey = 'uuid';
+
     protected $fillable = [
         'btc_price',
         'btc_24h_change_pct',

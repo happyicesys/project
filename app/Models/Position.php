@@ -10,6 +10,8 @@ class Position extends Model
 {
     use HasUuids;
 
+    protected $primaryKey = 'uuid';
+
     protected $fillable = [
         'signal_uuid', 'symbol', 'direction', 'entry_price', 'quantity',
         'stop_loss', 'take_profit', 'risk_pct', 'current_price',

@@ -11,6 +11,8 @@ class ResearchFinding extends Model
 {
     use HasUuids;
 
+    protected $primaryKey = 'uuid';
+
     protected $fillable = [
         'signal_name',
         'hypothesis',
