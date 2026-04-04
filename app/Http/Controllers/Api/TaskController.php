@@ -56,13 +56,13 @@ class TaskController extends Controller
             ['title' => $task->title, 'assigned_to' => $task->assigned_to],
         );
 
-        Log::channel('agents')->info('TASK_CREATED', [
+        rescue(fn () => Log::channel('agents')->info('TASK_CREATED', [
             'task_uuid'   => $task->getKey(),
             'title'       => $task->title,
             'assigned_to' => $task->assigned_to,
             'created_by'  => $task->created_by,
             'priority'    => $task->priority,
-        ]);
+        ]));
 
         return response()->json(['task' => $task], 201);
     }
