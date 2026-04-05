@@ -448,7 +448,7 @@ export default function Dashboard({
                                         </div>
                                         <p className="text-xs text-slate-300 font-mono truncate">{r.signal_name}</p>
                                         <span className="text-xs text-slate-600">
-                                            {r.edge_metric}: {r.edge_value?.toFixed(3)} · p={r.p_value?.toFixed(3)}
+                                            {r.edge_metric}: {Number(r.edge_value).toFixed(3)} · p={Number(r.p_value).toFixed(3)}
                                         </span>
                                     </div>
                                 ))}
