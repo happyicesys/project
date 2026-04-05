@@ -17,25 +17,39 @@ class PortfolioController extends Controller
      * Full portfolio state snapshot — the single source of truth.
      * Portfolio Manager writes here. All other agents read from here.
      * One call, complete picture.
+     *
+     * Returns 503 (not 500) on DB error so agents can distinguish
+     * "service temporarily unavailable" from a hard crash.
      */
     public function state(): JsonResponse
     {
-        $latest    = PortfolioState::current();
-        $positions = Position::where('status', 'open')->get([
-            'uuid', 'symbol', 'direction', 'entry_price', 'current_price',
-            'unrealised_pnl', 'unrealised_pnl_pct', 'risk_pct',
-        ]);
-        $circuitBreakers = CircuitBreaker::where('active', true)
-            ->where(fn ($q) => $q->whereNull('expires_at')->orWhere('expires_at', '>', now()))
-            ->get(['type', 'action', 'reason', 'expires_at']);
+        try {
+            $latest    = PortfolioState::current();
+            $positions = Position::where('status', 'open')->get([
+                'uuid', 'symbol', 'direction', 'entry_price', 'current_price',
+                'unrealised_pnl', 'unrealised_pnl_pct', 'risk_pct',
+            ]);
+            $circuitBreakers = CircuitBreaker::where('active', true)
+                ->where(fn ($q) => $q->whereNull('expires_at')->orWhere('expires_at', '>', now()))
+                ->get(['type', 'action', 'reason', 'expires_at']);
 
-        return response()->json([
-            'snapshot'        => $latest,
-            'open_positions'  => $positions,
-            'circuit_breakers'=> $circuitBreakers,
-            'is_halted'       => CircuitBreaker::isHalted(),
-            'timestamp'       => now()->toIso8601String(),
-        ]);
+            return response()->json([
+                'snapshot'        => $latest,
+                'open_positions'  => $positions,
+                'circuit_breakers'=> $circuitBreakers,
+                'is_halted'       => CircuitBreaker::isHalted(),
+                'timestamp'       => now()->toIso8601String(),
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('PortfolioController::state failed: ' . $e->getMessage(), [
+                'exception' => $e,
+            ]);
+            return response()->json([
+                'error'     => 'Portfolio state temporarily unavailable',
+                'detail'    => app()->hasDebugModeEnabled() ? $e->getMessage() : null,
+                'timestamp' => now()->toIso8601String(),
+            ], 503);
+        }
     }
 
     /**

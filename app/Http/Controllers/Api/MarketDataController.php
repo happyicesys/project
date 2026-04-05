@@ -89,7 +89,11 @@ class MarketDataController extends Controller
         $limit    = $request->integer('limit', 500);
         $key      = "binance_klines_{$sym}_{$interval}_{$limit}";
 
-        $data = Cache::remember($key, 60, fn () => $this->binance->getKlines($sym, $interval, $limit));
+        // Large requests (backtest-sized, limit > 200) cached 5 min — they change very slowly
+        // Small requests (real-time monitoring) cached 60 s
+        $ttl = $limit > 200 ? 300 : 60;
+
+        $data = Cache::remember($key, $ttl, fn () => $this->binance->getKlines($sym, $interval, $limit));
 
         return $data
             ? response()->json($data)
