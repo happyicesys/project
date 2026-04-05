@@ -141,6 +141,7 @@ Route::middleware('auth:sanctum')->prefix('manager')->group(function () {
     Route::patch('/research-findings/{uuid}/status', [ResearchController::class, 'updateStatus']);
 
     // Alert management
+    Route::get('/alerts', [MarketDataController::class, 'activeAlerts']);
     Route::patch('/alerts/{uuid}/acknowledge', [MarketDataController::class, 'acknowledgeAlert']);
 
     // Model registry management (Manager approves models)
