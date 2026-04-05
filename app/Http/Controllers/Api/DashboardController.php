@@ -27,7 +27,7 @@ class DashboardController extends Controller
                 'agents' => [
                     'total' => Agent::count(),
                     'online' => Agent::where('status', 'online')
-                        ->where('last_heartbeat_at', '>', now()->subMinutes(5))
+                        ->where('last_heartbeat_at', '>', now()->subMinutes(40))
                         ->count(),
                 ],
                 'tasks' => [
