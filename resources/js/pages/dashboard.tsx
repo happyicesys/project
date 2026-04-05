@@ -167,8 +167,33 @@ export default function Dashboard({
     const [research, setResearch] = useState<ResearchRow[]>(initialResearch);
     const [lastFetch, setLastFetch] = useState<string>(new Date(initialTs).toLocaleTimeString());
     const [countdown, setCountdown] = useState(30);
+    const [cleaning, setCleaning] = useState(false);
+    const [cleanMsg, setCleanMsg] = useState<string | null>(null);
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    async function cleanupStaleTasks() {
+        setCleaning(true);
+        setCleanMsg(null);
+        try {
+            const res = await fetch('/dashboard/cleanup-stale-tasks', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'X-CSRF-TOKEN': (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content ?? '',
+                    'Accept': 'application/json',
+                },
+            });
+            const data = await res.json();
+            setCleanMsg(data.message ?? 'Done');
+            refresh();
+        } catch {
+            setCleanMsg('Cleanup failed');
+        } finally {
+            setCleaning(false);
+            setTimeout(() => setCleanMsg(null), 4000);
+        }
+    }
 
     async function refresh() {
         try {
@@ -225,6 +250,15 @@ export default function Dashboard({
                     )}
                 </div>
                 <div className="flex items-center gap-2 text-xs text-slate-600">
+                    {cleanMsg && <span className="text-emerald-400">{cleanMsg}</span>}
+                    <button
+                        onClick={cleanupStaleTasks}
+                        disabled={cleaning}
+                        className="text-slate-500 hover:text-orange-400 transition-colors px-1.5 py-0.5 rounded border border-slate-800 hover:border-orange-800 disabled:opacity-40"
+                        title="Mark tasks stuck in_progress for 2+ hours as failed"
+                    >
+                        {cleaning ? 'Cleaning…' : '🧹 Stale'}
+                    </button>
                     <span>Updated {lastFetch}</span>
                     <button
                         onClick={() => { setCountdown(30); refresh(); }}

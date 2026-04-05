@@ -14,6 +14,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // JSON endpoint for client-side auto-refresh (30s polling)
     Route::get('dashboard/overview', [DashboardPageController::class, 'overview'])->name('dashboard.overview');
+
+    // Mark stale in_progress tasks as failed (manager action)
+    Route::post('dashboard/cleanup-stale-tasks', [DashboardPageController::class, 'cleanupStaleTasks'])->name('dashboard.cleanup');
 });
 
 require __DIR__.'/settings.php';

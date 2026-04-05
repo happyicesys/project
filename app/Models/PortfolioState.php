@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class PortfolioState extends Model
 {
+    protected $table = 'portfolio_state'; // migration uses singular name
+
     protected $fillable = [
         'total_equity',
         'available_capital',

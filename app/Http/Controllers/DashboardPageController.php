@@ -117,4 +117,32 @@ class DashboardPageController extends Controller
     {
         return response()->json($this->buildOverview());
     }
+
+    /**
+     * Mark stale in_progress tasks as failed.
+     * A task is stale if it has been in_progress for more than the given threshold (default 2h).
+     */
+    public function cleanupStaleTasks(Request $request): JsonResponse
+    {
+        $hours = $request->integer('hours', 2);
+
+        $stale = Task::where('status', 'in_progress')
+            ->where('updated_at', '<', now()->subHours($hours))
+            ->get();
+
+        $count = 0;
+        foreach ($stale as $task) {
+            $task->update([
+                'status'       => 'failed',
+                'completed_at' => now(),
+                'result'       => ['reason' => "Auto-expired: stuck in_progress for over {$hours}h"],
+            ]);
+            $count++;
+        }
+
+        return response()->json([
+            'cleaned' => $count,
+            'message' => "Marked {$count} stale task(s) as failed.",
+        ]);
+    }
 }
