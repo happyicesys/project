@@ -39,9 +39,40 @@ interface FirmStatus {
     sentiment: { score: number; overall_bias: string; fear_greed_index: number } | null;
 }
 
+interface AlertRow {
+    uuid: string;
+    type: string;
+    severity: string;
+    description: string;
+    symbol: string | null;
+    created_at: string;
+}
+
+interface TaskRow {
+    uuid: string;
+    title: string;
+    status: string;
+    priority: string;
+    assigned_to: string;
+    created_at: string;
+}
+
+interface ResearchRow {
+    uuid: string;
+    signal_name: string;
+    status: string;
+    edge_metric: string;
+    edge_value: number;
+    p_value: number;
+    created_at: string;
+}
+
 interface PageProps {
     firm_status: FirmStatus;
     agents: AgentRow[];
+    recent_alerts: AlertRow[];
+    active_tasks: TaskRow[];
+    research_queue: ResearchRow[];
     timestamp: string;
 }
 
@@ -121,9 +152,19 @@ function AgentDot({ online }: { online: boolean }) {
 
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 
-export default function Dashboard({ firm_status: initialFs, agents: initialAgents, timestamp: initialTs }: PageProps) {
+export default function Dashboard({
+    firm_status: initialFs,
+    agents: initialAgents,
+    recent_alerts: initialAlerts,
+    active_tasks: initialTasks,
+    research_queue: initialResearch,
+    timestamp: initialTs,
+}: PageProps) {
     const [fs, setFs] = useState<FirmStatus>(initialFs);
     const [agents, setAgents] = useState<AgentRow[]>(initialAgents);
+    const [alerts, setAlerts] = useState<AlertRow[]>(initialAlerts);
+    const [tasks, setTasks] = useState<TaskRow[]>(initialTasks);
+    const [research, setResearch] = useState<ResearchRow[]>(initialResearch);
     const [lastFetch, setLastFetch] = useState<string>(new Date(initialTs).toLocaleTimeString());
     const [countdown, setCountdown] = useState(30);
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -136,6 +177,9 @@ export default function Dashboard({ firm_status: initialFs, agents: initialAgent
             const data: PageProps = await res.json();
             setFs(data.firm_status);
             setAgents(data.agents);
+            setAlerts(data.recent_alerts ?? []);
+            setTasks(data.active_tasks ?? []);
+            setResearch(data.research_queue ?? []);
             setLastFetch(new Date(data.timestamp).toLocaleTimeString());
         } catch {
             // silently ignore — page still shows last known state
@@ -324,9 +368,7 @@ export default function Dashboard({ firm_status: initialFs, agents: initialAgent
                                     <span className={`font-medium truncate ${agent.is_online ? 'text-slate-200' : 'text-slate-500'}`}>
                                         {agent.name || agent.agent_id}
                                     </span>
-                                    <span className="text-xs text-slate-600">
-                                        {agent.role}
-                                    </span>
+                                    <span className="text-xs text-slate-600">{agent.role}</span>
                                     <span className="text-xs text-slate-700 mt-0.5">
                                         ♥ {agent.last_heartbeat_at ? ago(agent.last_heartbeat_at) : 'never'}
                                     </span>
@@ -335,6 +377,86 @@ export default function Dashboard({ firm_status: initialFs, agents: initialAgent
                         ))}
                     </div>
                 </Panel>
+
+                {/* ── Row 4: Detail panels ── */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+
+                    {/* Active Alerts */}
+                    <Panel title={`Active Alerts (${alerts.length})`} accent={fs.alerts.critical > 0}>
+                        {alerts.length === 0 ? (
+                            <span className="text-xs text-slate-600">No unacknowledged alerts</span>
+                        ) : (
+                            <div className="flex flex-col gap-2">
+                                {alerts.map(a => (
+                                    <div key={a.uuid} className="flex flex-col gap-0.5 border-b border-slate-800 pb-2 last:border-0 last:pb-0">
+                                        <div className="flex items-center gap-2">
+                                            <span className={`text-xs font-semibold ${
+                                                a.severity === 'CRITICAL' ? 'text-red-400' :
+                                                a.severity === 'WARNING'  ? 'text-yellow-400' : 'text-slate-400'
+                                            }`}>{a.severity}</span>
+                                            <span className="text-xs text-slate-500 font-mono">{a.type}</span>
+                                            {a.symbol && <span className="text-xs text-slate-600">{a.symbol}</span>}
+                                            <span className="text-xs text-slate-700 ml-auto">{ago(a.created_at)}</span>
+                                        </div>
+                                        <p className="text-xs text-slate-400 leading-relaxed line-clamp-2">{a.description}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </Panel>
+
+                    {/* Active Tasks */}
+                    <Panel title={`Active Tasks (${tasks.length})`}>
+                        {tasks.length === 0 ? (
+                            <span className="text-xs text-slate-600">No active tasks</span>
+                        ) : (
+                            <div className="flex flex-col gap-2">
+                                {tasks.map(t => (
+                                    <div key={t.uuid} className="flex flex-col gap-0.5 border-b border-slate-800 pb-2 last:border-0 last:pb-0">
+                                        <div className="flex items-center gap-2">
+                                            <span className={`text-xs font-semibold ${
+                                                t.status === 'in_progress' ? 'text-blue-400' : 'text-yellow-400'
+                                            }`}>{t.status === 'in_progress' ? 'RUNNING' : 'PENDING'}</span>
+                                            <span className={`text-xs ${
+                                                t.priority === 'critical' ? 'text-red-400' :
+                                                t.priority === 'high'     ? 'text-orange-400' : 'text-slate-500'
+                                            }`}>{t.priority.toUpperCase()}</span>
+                                            <span className="text-xs text-slate-600 ml-auto">{ago(t.created_at)}</span>
+                                        </div>
+                                        <p className="text-xs text-slate-300 truncate">{t.title}</p>
+                                        <span className="text-xs text-slate-600">→ {t.assigned_to}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </Panel>
+
+                    {/* Research Queue */}
+                    <Panel title={`Research Queue (${research.length})`}>
+                        {research.length === 0 ? (
+                            <span className="text-xs text-slate-600">No findings awaiting backtest</span>
+                        ) : (
+                            <div className="flex flex-col gap-2">
+                                {research.map(r => (
+                                    <div key={r.uuid} className="flex flex-col gap-0.5 border-b border-slate-800 pb-2 last:border-0 last:pb-0">
+                                        <div className="flex items-center gap-2">
+                                            <span className={`text-xs font-semibold ${
+                                                r.status === 'in_backtest'          ? 'text-blue-400' :
+                                                r.status === 'approved_for_backtest'? 'text-yellow-400' : 'text-slate-400'
+                                            }`}>{r.status.replace(/_/g, ' ').toUpperCase()}</span>
+                                            <span className="text-xs text-slate-700 ml-auto">{ago(r.created_at)}</span>
+                                        </div>
+                                        <p className="text-xs text-slate-300 font-mono truncate">{r.signal_name}</p>
+                                        <span className="text-xs text-slate-600">
+                                            {r.edge_metric}: {r.edge_value?.toFixed(3)} · p={r.p_value?.toFixed(3)}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </Panel>
+
+                </div>
 
             </div>
         </>

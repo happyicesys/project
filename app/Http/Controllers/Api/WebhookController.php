@@ -74,4 +74,34 @@ class WebhookController extends Controller
             'signals' => $query->paginate($request->integer('per_page', 20)),
         ]);
     }
+
+    /**
+     * Risk Officer manually approves or rejects a signal.
+     * Note: most signals are auto-evaluated on submission via RiskManagementService.
+     * This endpoint handles manual overrides (e.g. edge cases, circuit-breaker lifts).
+     */
+    public function updateSignal(Request $request, string $uuid): JsonResponse
+    {
+        $signal = TradeSignal::findOrFail($uuid);
+
+        $validated = $request->validate([
+            'status' => 'required|in:APPROVED,REJECTED_BY_RISK',
+            'reason' => 'nullable|string|max:500',
+        ]);
+
+        $signal->update([
+            'status' => $validated['status'],
+            'rejection_reason' => $validated['reason'] ?? null,
+        ]);
+
+        ActivityLog::record(
+            $request->authenticated_agent->agent_id ?? 'risk-officer',
+            'signal.' . strtolower($validated['status']),
+            'trade_signal',
+            $signal->getKey(),
+            ['reason' => $validated['reason'] ?? null],
+        );
+
+        return response()->json(['signal' => $signal->fresh()]);
+    }
 }

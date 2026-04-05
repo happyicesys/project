@@ -12,6 +12,7 @@ use App\Models\ResearchFinding;
 use App\Models\SentimentScore;
 use App\Models\Task;
 use App\Models\TradeSignal;
+use App\Models\ModelRegistry;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -76,6 +77,26 @@ class DashboardPageController extends Controller
                 'last_heartbeat_at' => $a->last_heartbeat_at?->toIso8601String(),
                 'capabilities'      => $a->capabilities,
             ])->values()->all(),
+
+            // Detail panels — latest records for dashboard visibility
+            'recent_alerts' => Alert::unacknowledged()
+                ->latest()
+                ->limit(8)
+                ->get(['uuid', 'type', 'severity', 'description', 'symbol', 'created_at'])
+                ->toArray(),
+
+            'active_tasks' => Task::whereIn('status', ['pending', 'in_progress'])
+                ->latest()
+                ->limit(10)
+                ->get(['uuid', 'title', 'status', 'priority', 'assigned_to', 'created_at'])
+                ->toArray(),
+
+            'research_queue' => ResearchFinding::whereIn('status', ['submitted', 'approved_for_backtest', 'in_backtest'])
+                ->latest()
+                ->limit(8)
+                ->get(['uuid', 'signal_name', 'status', 'edge_metric', 'edge_value', 'p_value', 'created_at'])
+                ->toArray(),
+
             'timestamp' => now()->toIso8601String(),
         ];
     }

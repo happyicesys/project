@@ -45,6 +45,7 @@ Route::middleware(AuthenticateAgent::class)->group(function () {
     // Trade Signals (Signal Engineer → Risk → Execution)
     Route::post('/signals', [WebhookController::class, 'receiveSignal'])->name('signals.receive');
     Route::get('/signals', [WebhookController::class, 'listSignals'])->name('signals.list');
+    Route::patch('/signals/{uuid}', [WebhookController::class, 'updateSignal'])->name('signals.update');
 
     // Research Findings (Quant Researcher submits)
     Route::get('/research-findings', [ResearchController::class, 'index']);
