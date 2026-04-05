@@ -9,6 +9,8 @@ use App\Models\MarketUpdate;
 use App\Services\BinanceService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 
 class MarketDataController extends Controller
 {
@@ -64,10 +66,12 @@ class MarketDataController extends Controller
 
     /**
      * Proxy to Binance — get current price.
+     * Cached 15 s so 11 agents hitting the same symbol don't all fan out to Binance.
      */
     public function price(string $symbol): JsonResponse
     {
-        $data = $this->binance->getPrice(strtoupper($symbol));
+        $sym  = strtoupper($symbol);
+        $data = Cache::remember("binance_price_{$sym}", 15, fn () => $this->binance->getPrice($sym));
 
         return $data
             ? response()->json($data)
@@ -76,13 +80,16 @@ class MarketDataController extends Controller
 
     /**
      * Proxy to Binance — get klines.
+     * Cached 60 s — klines at 1h resolution don't change meaningfully faster.
      */
     public function klines(Request $request, string $symbol): JsonResponse
     {
+        $sym      = strtoupper($symbol);
         $interval = $request->query('interval', '1h');
-        $limit = $request->integer('limit', 500);
+        $limit    = $request->integer('limit', 500);
+        $key      = "binance_klines_{$sym}_{$interval}_{$limit}";
 
-        $data = $this->binance->getKlines(strtoupper($symbol), $interval, $limit);
+        $data = Cache::remember($key, 60, fn () => $this->binance->getKlines($sym, $interval, $limit));
 
         return $data
             ? response()->json($data)
@@ -91,10 +98,12 @@ class MarketDataController extends Controller
 
     /**
      * Proxy to Binance — get funding rate.
+     * Cached 5 min — funding rates update every 8 h on Binance.
      */
     public function fundingRate(string $symbol): JsonResponse
     {
-        $data = $this->binance->getFundingRate(strtoupper($symbol));
+        $sym  = strtoupper($symbol);
+        $data = Cache::remember("binance_funding_{$sym}", 300, fn () => $this->binance->getFundingRate($sym));
 
         return $data
             ? response()->json($data)
@@ -103,14 +112,39 @@ class MarketDataController extends Controller
 
     /**
      * Proxy to Binance — get open interest.
+     * Cached 5 min.
      */
     public function openInterest(string $symbol): JsonResponse
     {
-        $data = $this->binance->getOpenInterest(strtoupper($symbol));
+        $sym  = strtoupper($symbol);
+        $data = Cache::remember("binance_oi_{$sym}", 300, fn () => $this->binance->getOpenInterest($sym));
 
         return $data
             ? response()->json($data)
             : response()->json(['error' => 'Failed to fetch open interest'], 502);
+    }
+
+    /**
+     * Proxy to Alternative.me — Fear & Greed Index.
+     * Cached 10 min (index updates once per day, no need to hammer it).
+     */
+    public function fearGreed(): JsonResponse
+    {
+        $data = Cache::remember('fear_greed_index', 600, function () {
+            try {
+                $response = Http::timeout(10)->get('https://api.alternative.me/fng/?limit=3&format=json');
+                if ($response->successful()) {
+                    return $response->json();
+                }
+            } catch (\Exception $e) {
+                \Illuminate\Support\Facades\Log::warning("Fear & Greed fetch failed: " . $e->getMessage());
+            }
+            return null;
+        });
+
+        return $data
+            ? response()->json($data)
+            : response()->json(['error' => 'Failed to fetch Fear & Greed index'], 502);
     }
 
     /**

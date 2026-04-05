@@ -118,6 +118,7 @@ Route::middleware(AuthenticateAgent::class)->group(function () {
     Route::get('/market/price', [MarketDataController::class, 'priceByQuery']);          // GET /market/price?symbol=BTCUSDT
     Route::get('/market/klines', [MarketDataController::class, 'klinesByQuery']);        // GET /market/klines?symbol=X&interval=Y
     Route::get('/market/funding-rate', [MarketDataController::class, 'fundingRateByQuery']); // GET /market/funding-rate?symbol=X
+    Route::get('/market/fear-greed', [MarketDataController::class, 'fearGreed']);       // GET /market/fear-greed — Alternative.me Fear & Greed Index
 
     // Binance account proxy (Execution Engineer needs account balance & open positions)
     Route::get('/binance/account', [MarketDataController::class, 'binanceAccount']);
